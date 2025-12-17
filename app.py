@@ -1,74 +1,41 @@
-# =========================================================
-# TITANIC SURVIVAL PREDICTOR - STREAMLIT APP
-# =========================================================
-
 import streamlit as st
-import pandas as pd
-import numpy as np
 import pickle
+import numpy as np
+from tensorflow.keras.models import model_from_json
 
-# =============================
-# Load trained model and scaler
-# =============================
+# 1. Load model + scaler from single PKL
 with open("titanic_ann_model.pkl", "rb") as f:
-    model = pickle.load(f)
+    model_data = pickle.load(f)
 
-with open("scaler.pkl", "rb") as f:
-    scaler = pickle.load(f)
+# Reconstruct the ANN model
+model = model_from_json(model_data["architecture"])
+model.set_weights(model_data["weights"])
 
-# These are the columns used during training
-training_columns = [
-    'Pclass','Age','sibsp','Parch','Fare',
-    'Sex_female','Embarked_Q','Embarked_S'
-]
+# Load scaler
+scaler = model_data["scaler"]
 
-# =============================
-# Streamlit UI
-# =============================
-st.title("🚢 Titanic Survival Predictor")
-st.write("Enter passenger details to predict the probability of survival.")
+st.title("Titanic Survival Prediction")
 
-# --- User inputs ---
-pclass = st.selectbox("Passenger Class (1 = 1st, 2 = 2nd, 3 = 3rd)", [1,2,3])
-sex = st.selectbox("Sex", ["male","female"])
-age = st.number_input("Age", min_value=0, max_value=120, value=18)
-sibsp = st.number_input("Number of siblings/spouses aboard", min_value=0, value=0)
-parch = st.number_input("Number of parents/children aboard", min_value=0, value=0)
-fare = st.number_input("Fare", min_value=0.0, value=32.05, step=0.01)
-embarked = st.selectbox("Port of Embarkation", ["C","Q","S"])
+# Example: user input for features (adjust these to your dataset)
+pclass = st.number_input("Passenger Class (1,2,3)", min_value=1, max_value=3, value=3)
+sex = st.selectbox("Sex", ["male", "female"])
+age = st.number_input("Age", min_value=0, max_value=100, value=30)
+sibsp = st.number_input("Siblings/Spouses Aboard", min_value=0, max_value=10, value=0)
+parch = st.number_input("Parents/Children Aboard", min_value=0, max_value=10, value=0)
+fare = st.number_input("Fare", min_value=0.0, value=32.0)
 
-# --- Prepare input dataframe ---
-input_df = pd.DataFrame({
-    'Pclass':[pclass],
-    'Age':[age],
-    'sibsp':[sibsp],
-    'Parch':[parch],
-    'Fare':[fare],
-    'Sex':[sex],
-    'Embarked':[embarked]
-})
+# Convert categorical to numeric
+sex_num = 1 if sex == "male" else 0
 
-# One-hot encode categorical features
-input_df = pd.get_dummies(input_df, columns=['Sex','Embarked'], drop_first=False)
+# Create input array
+X_input = np.array([[pclass, sex_num, age, sibsp, parch, fare]])
 
-# Add any missing columns (fill with 0)
-for col in training_columns:
-    if col not in input_df.columns:
-        input_df[col] = 0
+# Scale input using the loaded scaler
+X_scaled = scaler.transform(X_input)
 
-# Reorder columns exactly like training
-input_df = input_df[training_columns]
+# Make prediction
+prediction = model.predict(X_scaled)
+survival_prob = prediction[0][0]
 
-# Scale numeric columns
-numeric_cols = ["Pclass","Age","sibsp","Parch","Fare"]
-input_df[numeric_cols] = scaler.transform(input_df[numeric_cols])
-
-# =============================
-# Prediction
-# =============================
-if st.button("Predict Survival Probability"):
-    pred_prob = model.predict(input_df)[0][0]
-    pred_class = int(pred_prob > 0.5)
-    
-    st.write(f"**Predicted probability of survival:** {pred_prob:.2f}")
-    st.write("**Prediction:**", "✅ Survived" if pred_class==1 else "❌ Did not survive")
+st.write(f"Predicted Survival Probability: {survival_prob:.2f}")
+st.write("Prediction: **Survived**" if survival_prob > 0.5 else "Prediction: **Did Not Survive**")
